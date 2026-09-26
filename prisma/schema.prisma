@@ -1,0 +1,349 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model GuildConfig {
+  guildId        String @id
+  
+  // Advanced Welcome System
+  welcomeEnabled     Boolean @default(false)
+  welcomeChannel     String?
+  welcomeTitle       String?
+  welcomeDescription String?
+  welcomeMessage     String?
+  welcomeColor       String?
+  welcomeImageUrl    String?
+  welcomeThumbnailUrl String?
+  welcomeFooterText  String?
+  welcomeShowTimestamp Boolean @default(true)
+  welcomeButtonEnabled Boolean @default(true)
+  welcomeButtonLabel String?
+  welcomeButtonStyle Int?
+  
+  // Advanced Ticket System
+  ticketEnabled             Boolean @default(false)
+  ticketCategoryId          String?
+  ticketStaffRoleId         String?
+  ticketLogChannelId        String?
+  ticketTranscriptChannelId String?
+  ticketPanelChannelId      String?
+  ticketPanelMessageId      String?
+  ticketMaxPerUser          Int     @default(1)
+  ticketCooldownSeconds     Int     @default(300)
+  ticketNameFormat          String  @default("ticket-{username}")
+  
+  // Advanced Counting System
+  countingEnabled      Boolean @default(false)
+  countingChannelId    String?
+  countingCurrent      Int     @default(1)
+  countingHighest      Int     @default(0)
+  countingTotalValid   Int     @default(0)
+  countingStreak       Int     @default(0)
+  countingLastUserId   String?
+  countingLastCountAt  DateTime?
+  chatBanRole    String?
+  
+  // Advanced ChatBan System
+  chatBanEnabled            Boolean @default(false)
+  chatBanRoleId             String?
+  chatBanCategoryId         String?
+  chatBanModeratorRoleId    String?
+  chatBanLogChannelId       String?
+  chatBanAppealChannelId    String?
+  chatBanInfoChannelId      String?
+  chatBanDmEnabled          Boolean @default(true)
+  chatBanIsolationEnabled   Boolean @default(true)
+  chatBanSelfHealingEnabled Boolean @default(true)
+  
+  // Logging Configuration
+  mainLogChannelId          String?
+  modLogChannelId           String?
+
+  // Auto Moderation
+  autoModEnabled            Boolean @default(false)
+  autoModLogChannelId       String?
+  autoModExemptRoles        String? // Comma-separated list of role IDs
+  autoModExemptChannels     String? // Comma-separated list of channel IDs
+
+  // Reaction Roles
+  reactionRolesEnabled      Boolean @default(true)
+  
+  // Giveaways
+  giveawaysEnabled          Boolean @default(true)
+
+  // Suggestions
+  suggestionsEnabled           Boolean @default(false)
+  suggestionChannelId          String?
+  suggestionLogChannelId       String?
+  suggestionStaffRoleId        String?
+  suggestionAnonymousEnabled   Boolean @default(false)
+  suggestionCooldownSeconds    Int     @default(300)
+  suggestionMinLength          Int     @default(10)
+  suggestionMaxLength          Int     @default(1000)
+  nextSuggestionNumber         Int     @default(1)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  nextCaseNumber Int      @default(1)
+}
+
+model AutoModRule {
+  id              String   @id @default(uuid())
+  guildId         String
+  ruleType        String   // spam, flood, duplicate, mentions, links, emoji, caps, profanity
+  enabled         Boolean  @default(false)
+  action          String   @default("delete") // delete, warn, timeout, chatban, delete_warn, etc
+  threshold       Int?
+  timeWindow      Int?
+  
+  @@unique([guildId, ruleType])
+}
+
+model AutoModWord {
+  id              String   @id @default(uuid())
+  guildId         String
+  word            String
+  
+  @@unique([guildId, word])
+}
+
+model ModerationWarning {
+  id              String   @id @default(uuid())
+  guildId         String
+  userId          String
+  moderatorId     String?
+  reason          String
+  rule            String?
+  createdAt       DateTime @default(now())
+  
+  @@index([guildId, userId])
+}
+
+model ChatBanRecord {
+  id         String    @id @default(uuid())
+  guildId    String
+  userId     String
+  reason     String
+  bannedById String
+  createdAt  DateTime  @default(now())
+  unbannedAt DateTime?
+  active     Boolean   @default(true)
+  restoredAt DateTime?
+  
+  roleBackups RoleBackup[]
+
+  @@index([guildId, userId])
+}
+
+model RoleBackup {
+  id               String   @id @default(uuid())
+  chatBanRecordId  String
+  roleId           String
+  roleNameSnapshot String
+  createdAt        DateTime @default(now())
+  restoredAt       DateTime?
+  
+  chatBanRecord    ChatBanRecord @relation(fields: [chatBanRecordId], references: [id], onDelete: Cascade)
+}
+
+model TicketType {
+  id          String   @id @default(uuid())
+  guildId     String
+  key         String
+  name        String
+  description String?
+  emoji       String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([guildId, key])
+}
+
+model TicketRecord {
+  id           String   @id @default(uuid())
+  ticketId     String // Usually mapped to channelId or a sequential number
+  guildId      String
+  channelId    String
+  creatorId    String
+  ticketType   String
+  claimedById  String?
+  status       String   @default("open") // open, closed, deleted
+  
+  createdAt    DateTime @default(now())
+  closedAt     DateTime?
+  deletedAt    DateTime?
+  
+  @@unique([guildId, channelId])
+}
+
+model MemberRecord {
+  id        String   @id @default(uuid())
+  guildId   String
+  userId    String
+  joinCount Int      @default(1)
+  memberNumber Int?  // The unique member number for the server
+  
+  // For ticket cooldowns
+  lastTicketAt DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([guildId, userId])
+}
+
+model ModerationCase {
+  id          String   @id @default(uuid())
+  caseNumber  Int
+  guildId     String
+  userId      String
+  moderatorId String
+  action      String   // WARN, TIMEOUT, KICK, BAN, UNBAN, CHATBAN
+  reason      String?
+  source      String   // MANUAL, AUTOMOD, SYSTEM
+  duration    Int?     // In seconds or milliseconds
+  active      Boolean  @default(true)
+  metadata    String?  // JSON string if needed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([guildId, caseNumber])
+  @@index([guildId, userId])
+  @@index([guildId, caseNumber])
+  @@index([guildId, createdAt])
+}
+
+model ReactionRolePanel {
+  id          String   @id @default(uuid())
+  guildId     String
+  channelId   String?
+  messageId   String?
+  title       String
+  description String?
+  enabled     Boolean  @default(true)
+  
+  roles       ReactionRole[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([guildId, id]) // Panel uniqueness per guild
+}
+
+model ReactionRole {
+  id          String   @id @default(uuid())
+  panelId     String
+  roleId      String
+  label       String
+  description String?
+  emoji       String?
+  style       Int      @default(1) // Discord ButtonStyle
+  enabled     Boolean  @default(true)
+  
+  panel       ReactionRolePanel @relation(fields: [panelId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([panelId, roleId]) // A panel can only contain a role once
+}
+
+model Giveaway {
+  id                String   @id @default(uuid())
+  guildId           String
+  channelId         String
+  messageId         String?
+  hostUserId        String
+  prize             String
+  description       String?
+  winnerCount       Int
+  startAt           DateTime
+  endAt             DateTime
+  status            String   @default("SCHEDULED") // SCHEDULED, ACTIVE, ENDED, CANCELLED
+  requiredRoleId    String?
+  minimumAccountAge Int?     // In days
+  minimumServerAge  Int?     // In days
+  
+  entries           GiveawayEntry[]
+  winners           GiveawayWinner[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([guildId, status])
+}
+
+model GiveawayEntry {
+  id         String   @id @default(uuid())
+  giveawayId String
+  userId     String
+  enteredAt  DateTime @default(now())
+
+  giveaway   Giveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+
+  @@unique([giveawayId, userId])
+}
+
+model GiveawayWinner {
+  id           String   @id @default(uuid())
+  giveawayId   String
+  userId       String
+  selectedAt   DateTime @default(now())
+  rerollNumber Int      @default(0)
+
+  giveaway     Giveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+
+  @@unique([giveawayId, userId])
+}
+
+model Suggestion {
+  id               String   @id @default(uuid())
+  guildId          String
+  suggestionNumber Int
+  authorId         String
+  content          String
+  anonymous        Boolean  @default(false)
+  status           String   @default("PENDING") // PENDING, APPROVED, DENIED, IMPLEMENTED, ARCHIVED
+  channelId        String?
+  messageId        String?
+  
+  staffReason      String?
+  reviewedBy       String?
+  reviewedAt       DateTime?
+
+  votes            SuggestionVote[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([guildId, suggestionNumber])
+  @@index([guildId, status])
+  @@index([guildId, authorId])
+  @@index([guildId, createdAt])
+}
+
+model SuggestionVote {
+  id           String   @id @default(uuid())
+  suggestionId String
+  userId       String
+  vote         String   // UP, DOWN
+
+  suggestion   Suggestion @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+
+  @@unique([suggestionId, userId])
+}
+
+model SuggestionCooldown {
+  id        String   @id @default(uuid())
+  guildId   String
+  userId    String
+  lastSubmitAt DateTime @default(now())
+
+  @@unique([guildId, userId])
+}
