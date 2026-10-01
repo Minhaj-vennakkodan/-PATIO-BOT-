@@ -371,13 +371,14 @@ export async function handleHttpConfigCommand(ctx: HttpInteractionContext, respo
     return true;
   }
   
+  console.log(`[DIAGNOSTIC-MONGO] probe:start`);
   const dbUrl = process.env.DATABASE_URL || '';
   const isSrv = dbUrl.startsWith('mongodb+srv://');
   const safeHostMatch = dbUrl.match(/@([^\/]+)/);
   const safeHost = safeHostMatch ? safeHostMatch[1] : 'unknown';
   const hasOptions = dbUrl.includes('?');
 
-  console.log(`[DIAGNOSTIC-PROBE] DATABASE_URL exists: ${!!dbUrl}`);
+  console.log(`[DIAGNOSTIC-MONGO] url:validated`);
   console.log(`[DIAGNOSTIC-PROBE] Protocol is mongodb+srv: ${isSrv}`);
   console.log(`[DIAGNOSTIC-PROBE] Hostname: ${safeHost}`);
   console.log(`[DIAGNOSTIC-PROBE] Has options: ${hasOptions}`);
@@ -387,27 +388,33 @@ export async function handleHttpConfigCommand(ctx: HttpInteractionContext, respo
   
   try {
     const client = new MongoClient(dbUrl, {
-      serverSelectionTimeoutMS: 3000,
-      connectTimeoutMS: 3000
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 5000
     });
     
-    console.log(`[DIAGNOSTIC-PROBE] Connecting via MongoDB native driver...`);
+    console.log(`[DIAGNOSTIC-MONGO] connect:start`);
+    const connectStart = Date.now();
     await client.connect();
-    const connectTime = Date.now() - probeStart;
-    console.log(`[DIAGNOSTIC-PROBE] Connected in ${connectTime}ms`);
+    const connectTime = Date.now() - connectStart;
+    console.log(`[DIAGNOSTIC-MONGO] connect:end ${connectTime}ms`);
     
-    console.log(`[DIAGNOSTIC-PROBE] Pinging db...`);
+    console.log(`[DIAGNOSTIC-MONGO] ping:start`);
     const pingStart = Date.now();
     await client.db('admin').command({ ping: 1 });
     const pingTime = Date.now() - pingStart;
-    console.log(`[DIAGNOSTIC-PROBE] Ping took ${pingTime}ms`);
+    console.log(`[DIAGNOSTIC-MONGO] ping:end ${pingTime}ms`);
     
+    console.log(`[DIAGNOSTIC-MONGO] probe:success`);
     probeResult = `SUCCESS! Connect: ${connectTime}ms | Ping: ${pingTime}ms`;
     await client.close();
   } catch (err: any) {
+    console.log(`[DIAGNOSTIC-MONGO] probe:failed`);
+    console.log(`[DIAGNOSTIC-MONGO] errorName: ${err.name}`);
+    console.log(`[DIAGNOSTIC-MONGO] errorCode: ${err.code || 'unknown'}`);
+    console.log(`[DIAGNOSTIC-MONGO] topology: ${err.topologyDescription?.type || 'unknown'}`);
+    
     const totalTime = Date.now() - probeStart;
-    console.log(`[DIAGNOSTIC-PROBE] Failed after ${totalTime}ms:`, err.name, err.message);
-    probeResult = `FAILED (${totalTime}ms): ${err.name} - ${err.message}`;
+    probeResult = `FAILED (${totalTime}ms):\nName: ${err.name}\nCode: ${err.code || 'unknown'}\nMessage: ${err.message}`;
   }
 
   const payload = {

@@ -177,7 +177,13 @@ export default async function handler(req: any, res: any) {
     );
 
     try {
-      await Promise.race([processInteraction(), timeoutPromise]);
+      const isConfigCommand = interaction.type === 2 && interaction.data?.name === 'config';
+      
+      if (isConfigCommand) {
+        await processInteraction();
+      } else {
+        await Promise.race([processInteraction(), timeoutPromise]);
+      }
     } catch (e: any) {
       if (e.message === 'GLOBAL_TIMEOUT_2500') {
         console.log('[DIAGNOSTIC-CONFIG] Global interaction timeout triggered.');
