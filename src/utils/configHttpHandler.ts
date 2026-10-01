@@ -3,8 +3,6 @@ import { logger } from './logger';
 import { HttpInteractionContext } from './httpInteractionContext';
 import { PermissionFlagsBits } from 'discord.js';
 import * as os from 'os';
-import { MongoClient } from 'mongodb';
-
 export async function isAdministrator(ctx: HttpInteractionContext): Promise<boolean> {
   if (!ctx.memberPermissions) return false;
   return (BigInt(ctx.memberPermissions) & BigInt(PermissionFlagsBits.Administrator)) !== 0n;
@@ -359,7 +357,6 @@ export async function handleHttpConfigCommand(ctx: HttpInteractionContext, respo
   const t0 = Date.now();
   if (ctx.commandName !== 'config') return false;
   
-  console.log(`[DIAGNOSTIC-CONFIG] handler:start`);
   if (!ctx.guildId) {
     respond({ content: '❌ This command can only be used in a server.', flags: 64 });
     return true;
@@ -371,66 +368,22 @@ export async function handleHttpConfigCommand(ctx: HttpInteractionContext, respo
     return true;
   }
   
-  console.log(`[DIAGNOSTIC-MONGO] probe:start`);
-  const dbUrl = process.env.DATABASE_URL || '';
-  const isSrv = dbUrl.startsWith('mongodb+srv://');
-  const safeHostMatch = dbUrl.match(/@([^\/]+)/);
-  const safeHost = safeHostMatch ? safeHostMatch[1] : 'unknown';
-  const hasOptions = dbUrl.includes('?');
-
-  console.log(`[DIAGNOSTIC-MONGO] url:validated`);
-  console.log(`[DIAGNOSTIC-PROBE] Protocol is mongodb+srv: ${isSrv}`);
-  console.log(`[DIAGNOSTIC-PROBE] Hostname: ${safeHost}`);
-  console.log(`[DIAGNOSTIC-PROBE] Has options: ${hasOptions}`);
-
-  const probeStart = Date.now();
-  let probeResult = '';
-  
   try {
-    const client = new MongoClient(dbUrl, {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000
-    });
-    
-    console.log(`[DIAGNOSTIC-MONGO] connect:start`);
-    const connectStart = Date.now();
-    
-    // Explicit 8-second failsafe timeout in case native driver ignores connection limits
-    const failsafe = new Promise((_, reject) => setTimeout(() => reject(new Error('FAILSAFE_TIMEOUT')), 8000));
-    await Promise.race([client.connect(), failsafe]);
-    
-    const connectTime = Date.now() - connectStart;
-    console.log(`[DIAGNOSTIC-MONGO] connect:end ${connectTime}ms`);
-    
-    console.log(`[DIAGNOSTIC-MONGO] ping:start`);
-    const pingStart = Date.now();
-    await client.db('admin').command({ ping: 1 });
-    const pingTime = Date.now() - pingStart;
-    console.log(`[DIAGNOSTIC-MONGO] ping:end ${pingTime}ms`);
-    
-    console.log(`[DIAGNOSTIC-MONGO] probe:success`);
-    probeResult = `SUCCESS! Connect: ${connectTime}ms | Ping: ${pingTime}ms`;
-    await client.close();
-  } catch (err: any) {
-    console.log(`[DIAGNOSTIC-MONGO] probe:failed`);
-    console.log(`[DIAGNOSTIC-MONGO] errorName: ${err.name}`);
-    console.log(`[DIAGNOSTIC-MONGO] errorCode: ${err.code || 'unknown'}`);
-    console.log(`[DIAGNOSTIC-MONGO] topology: ${err.topologyDescription?.type || 'unknown'}`);
-    
-    const totalTime = Date.now() - probeStart;
-    probeResult = `FAILED (${totalTime}ms):\nName: ${err.name}\nCode: ${err.code || 'unknown'}\nMessage: ${err.message}`;
-  }
+    console.log(`[DIAGNOSTIC-PRISMA] findUnique:start`);
+    const t1 = Date.now();
+    // Warm up the pool with a simple query first if needed, but we'll do the actual query
+    await prisma.guildConfig.findUnique({ where: { guildId: ctx.guildId } });
+    console.log(`[DIAGNOSTIC-PRISMA] findUnique:end ${Date.now() - t1}ms`);
 
-  const payload = {
-    embeds: [{ 
-      title: '⚙️ MONGODB CONNECTIVITY PROBE', 
-      description: `**Result:**\n${probeResult}\n\n**Meta:**\nHost: ${safeHost}\nSRV: ${isSrv}`,
-      color: 0x2b2d31 
-    }],
-    components: []
-  };
+    // Actually fetch the full dashboard representation
+    const payload = await generateMainDashboardJson(ctx.guildId, `Guild ${ctx.guildId}`);
+    
+    respond({ ...payload, flags: 64 });
+  } catch (err: any) {
+    console.error('[DIAGNOSTIC-CONFIG] Prisma or rendering error:', err);
+    respond({ content: '❌ Internal error loading config.', flags: 64 });
+  }
   
-  respond({ ...payload, flags: 64 });
   console.log(`[DIAGNOSTIC-CONFIG] handler:end ${Date.now() - t0}ms`);
   return true;
 }
