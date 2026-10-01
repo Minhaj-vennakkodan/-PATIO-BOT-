@@ -363,28 +363,36 @@ export async function handleHttpConfigCommand(ctx: HttpInteractionContext, respo
     respond({ content: '❌ This command can only be used in a server.', flags: 64 });
     return true;
   }
-  console.log(`[DIAGNOSTIC-CONFIG] guildId acquired`);
   
-  const t1 = Date.now();
-  console.log(`[DIAGNOSTIC-CONFIG] permission check:start`);
   const isAdmin = await isAdministrator(ctx);
-  console.log(`[DIAGNOSTIC-CONFIG] permission check:end ${Date.now() - t1}ms`);
-  
   if (!isAdmin) {
-    console.log(`[DIAGNOSTIC-CONFIG] permission check failed`);
     respond({ content: '❌ You must be an Administrator to use this command.', flags: 64 });
     return true;
   }
   
-  const t2 = Date.now();
-  console.log(`[DIAGNOSTIC-CONFIG] static dashboard render:start`);
-  const payload = {
-    embeds: [{ title: '⚙️ STATIC DIAGNOSTIC DASHBOARD', description: 'Testing pure Vercel HTTP latency without Prisma.', color: 0x2b2d31 }],
-    components: []
-  };
-  console.log(`[DIAGNOSTIC-CONFIG] static dashboard render:end ${Date.now() - t2}ms`);
-  
-  respond({ ...payload, flags: 64 });
+  try {
+    const t1 = Date.now();
+    console.log(`[DIAGNOSTIC-PRISMA] findUnique:start`);
+    const config = await prisma.guildConfig.findUnique({ where: { guildId: ctx.guildId } });
+    const findDuration = Date.now() - t1;
+    console.log(`[DIAGNOSTIC-PRISMA] findUnique:end ${findDuration}ms`);
+    
+    // Minimal valid dashboard response for diagnostic
+    const payload = {
+      embeds: [{ 
+        title: '⚙️ PRISMA DIAGNOSTIC DASHBOARD', 
+        description: `Prisma query took ${findDuration}ms.\nConfig found: ${!!config}`,
+        color: 0x2b2d31 
+      }],
+      components: []
+    };
+    
+    respond({ ...payload, flags: 64 });
+  } catch (err: any) {
+    console.error('[DIAGNOSTIC-CONFIG] Prisma error:', err);
+    respond({ content: '❌ Internal error loading config.', flags: 64 });
+  }
+
   console.log(`[DIAGNOSTIC-CONFIG] handler:end ${Date.now() - t0}ms`);
   return true;
 }
