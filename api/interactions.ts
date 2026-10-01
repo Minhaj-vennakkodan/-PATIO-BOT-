@@ -13,6 +13,7 @@ export const config = {
 };
 
 export default async function handler(req: any, res: any) {
+  console.log('[DIAGNOSTIC] interactions endpoint reached');
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
