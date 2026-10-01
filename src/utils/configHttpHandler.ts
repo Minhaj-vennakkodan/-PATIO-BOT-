@@ -355,30 +355,37 @@ export async function generateSystemStatusJson(guildId: string) {
 import { createMessage } from './discordRest';
 
 export async function handleHttpConfigCommand(ctx: HttpInteractionContext, respond: any): Promise<boolean> {
+  const t0 = Date.now();
   if (ctx.commandName !== 'config') return false;
-  console.log('[DIAGNOSTIC-CONFIG] handleHttpConfigCommand entered');
+  
+  console.log(`[DIAGNOSTIC-CONFIG] handler:start`);
   if (!ctx.guildId) {
     respond({ content: '❌ This command can only be used in a server.', flags: 64 });
     return true;
   }
-  console.log('[DIAGNOSTIC-CONFIG] guildId obtained:', ctx.guildId);
-  if (!(await isAdministrator(ctx))) {
-    console.log('[DIAGNOSTIC-CONFIG] isAdministrator check failed');
+  console.log(`[DIAGNOSTIC-CONFIG] guildId acquired`);
+  
+  const t1 = Date.now();
+  console.log(`[DIAGNOSTIC-CONFIG] permission check:start`);
+  const isAdmin = await isAdministrator(ctx);
+  console.log(`[DIAGNOSTIC-CONFIG] permission check:end ${Date.now() - t1}ms`);
+  
+  if (!isAdmin) {
+    console.log(`[DIAGNOSTIC-CONFIG] permission check failed`);
     respond({ content: '❌ You must be an Administrator to use this command.', flags: 64 });
     return true;
   }
-  console.log('[DIAGNOSTIC-CONFIG] isAdministrator check passed');
   
-  try {
-    console.log('[DIAGNOSTIC-CONFIG] fetching Prisma config');
-    const payload = await generateMainDashboardJson(ctx.guildId, `Guild ${ctx.guildId}`);
-    console.log('[DIAGNOSTIC-CONFIG] Prisma config fetched and dashboard generated');
-    respond({ ...payload, flags: 64 });
-    console.log('[DIAGNOSTIC-CONFIG] respond() called successfully');
-  } catch (err: any) {
-    console.error('[DIAGNOSTIC-CONFIG] Prisma or rendering error:', err);
-    respond({ content: '❌ Internal error loading config.', flags: 64 });
-  }
+  const t2 = Date.now();
+  console.log(`[DIAGNOSTIC-CONFIG] static dashboard render:start`);
+  const payload = {
+    embeds: [{ title: '⚙️ STATIC DIAGNOSTIC DASHBOARD', description: 'Testing pure Vercel HTTP latency without Prisma.', color: 0x2b2d31 }],
+    components: []
+  };
+  console.log(`[DIAGNOSTIC-CONFIG] static dashboard render:end ${Date.now() - t2}ms`);
+  
+  respond({ ...payload, flags: 64 });
+  console.log(`[DIAGNOSTIC-CONFIG] handler:end ${Date.now() - t0}ms`);
   return true;
 }
 
