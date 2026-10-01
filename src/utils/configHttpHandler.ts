@@ -394,7 +394,11 @@ export async function handleHttpConfigCommand(ctx: HttpInteractionContext, respo
     
     console.log(`[DIAGNOSTIC-MONGO] connect:start`);
     const connectStart = Date.now();
-    await client.connect();
+    
+    // Explicit 8-second failsafe timeout in case native driver ignores connection limits
+    const failsafe = new Promise((_, reject) => setTimeout(() => reject(new Error('FAILSAFE_TIMEOUT')), 8000));
+    await Promise.race([client.connect(), failsafe]);
+    
     const connectTime = Date.now() - connectStart;
     console.log(`[DIAGNOSTIC-MONGO] connect:end ${connectTime}ms`);
     

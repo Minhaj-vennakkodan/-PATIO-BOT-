@@ -10,6 +10,7 @@ export const config = {
   api: {
     bodyParser: false,
   },
+  maxDuration: 30, // Extend Vercel timeout to 30 seconds
 };
 
 export default async function handler(req: any, res: any) {
