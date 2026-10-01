@@ -3,6 +3,7 @@ import { logger } from './logger';
 import { HttpInteractionContext } from './httpInteractionContext';
 import { PermissionFlagsBits } from 'discord.js';
 import * as os from 'os';
+import { MongoClient } from 'mongodb';
 
 export async function isAdministrator(ctx: HttpInteractionContext): Promise<boolean> {
   if (!ctx.memberPermissions) return false;
@@ -370,29 +371,55 @@ export async function handleHttpConfigCommand(ctx: HttpInteractionContext, respo
     return true;
   }
   
+  const dbUrl = process.env.DATABASE_URL || '';
+  const isSrv = dbUrl.startsWith('mongodb+srv://');
+  const safeHostMatch = dbUrl.match(/@([^\/]+)/);
+  const safeHost = safeHostMatch ? safeHostMatch[1] : 'unknown';
+  const hasOptions = dbUrl.includes('?');
+
+  console.log(`[DIAGNOSTIC-PROBE] DATABASE_URL exists: ${!!dbUrl}`);
+  console.log(`[DIAGNOSTIC-PROBE] Protocol is mongodb+srv: ${isSrv}`);
+  console.log(`[DIAGNOSTIC-PROBE] Hostname: ${safeHost}`);
+  console.log(`[DIAGNOSTIC-PROBE] Has options: ${hasOptions}`);
+
+  const probeStart = Date.now();
+  let probeResult = '';
+  
   try {
-    const t1 = Date.now();
-    console.log(`[DIAGNOSTIC-PRISMA] findUnique:start`);
-    const config = await prisma.guildConfig.findUnique({ where: { guildId: ctx.guildId } });
-    const findDuration = Date.now() - t1;
-    console.log(`[DIAGNOSTIC-PRISMA] findUnique:end ${findDuration}ms`);
+    const client = new MongoClient(dbUrl, {
+      serverSelectionTimeoutMS: 3000,
+      connectTimeoutMS: 3000
+    });
     
-    // Minimal valid dashboard response for diagnostic
-    const payload = {
-      embeds: [{ 
-        title: '⚙️ PRISMA DIAGNOSTIC DASHBOARD', 
-        description: `Prisma query took ${findDuration}ms.\nConfig found: ${!!config}`,
-        color: 0x2b2d31 
-      }],
-      components: []
-    };
+    console.log(`[DIAGNOSTIC-PROBE] Connecting via MongoDB native driver...`);
+    await client.connect();
+    const connectTime = Date.now() - probeStart;
+    console.log(`[DIAGNOSTIC-PROBE] Connected in ${connectTime}ms`);
     
-    respond({ ...payload, flags: 64 });
+    console.log(`[DIAGNOSTIC-PROBE] Pinging db...`);
+    const pingStart = Date.now();
+    await client.db('admin').command({ ping: 1 });
+    const pingTime = Date.now() - pingStart;
+    console.log(`[DIAGNOSTIC-PROBE] Ping took ${pingTime}ms`);
+    
+    probeResult = `SUCCESS! Connect: ${connectTime}ms | Ping: ${pingTime}ms`;
+    await client.close();
   } catch (err: any) {
-    console.error('[DIAGNOSTIC-CONFIG] Prisma error:', err);
-    respond({ content: '❌ Internal error loading config.', flags: 64 });
+    const totalTime = Date.now() - probeStart;
+    console.log(`[DIAGNOSTIC-PROBE] Failed after ${totalTime}ms:`, err.name, err.message);
+    probeResult = `FAILED (${totalTime}ms): ${err.name} - ${err.message}`;
   }
 
+  const payload = {
+    embeds: [{ 
+      title: '⚙️ MONGODB CONNECTIVITY PROBE', 
+      description: `**Result:**\n${probeResult}\n\n**Meta:**\nHost: ${safeHost}\nSRV: ${isSrv}`,
+      color: 0x2b2d31 
+    }],
+    components: []
+  };
+  
+  respond({ ...payload, flags: 64 });
   console.log(`[DIAGNOSTIC-CONFIG] handler:end ${Date.now() - t0}ms`);
   return true;
 }
