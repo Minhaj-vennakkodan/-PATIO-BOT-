@@ -79,7 +79,9 @@ export default async function handler(req: any, res: any) {
     }
 
     const respond = (data: any, type: number = ResponseTypes.CHANNEL_MESSAGE_WITH_SOURCE) => {
-      res.status(200).json({ type, data });
+      if (!res.headersSent) {
+        res.status(200).json({ type, data });
+      }
     };
 
     const ctx: HttpInteractionContext = {
@@ -92,79 +94,100 @@ export default async function handler(req: any, res: any) {
       memberPermissions: interaction.member?.permissions,
     };
 
-    if (interaction.type === 2) { // APPLICATION_COMMAND
-      ctx.commandName = interaction.data.name;
-      ctx.options = parseCommandOptions(interaction.data.options);
-      
-      if (ctx.commandName === 'suggestion') {
-        const handled = await handleHttpSuggestionCommand(ctx, respond);
-        if (handled) return;
+    const processInteraction = async () => {
+      if (interaction.type === 2) { // APPLICATION_COMMAND
+        console.log('[DIAGNOSTIC-CONFIG] APPLICATION_COMMAND detected');
+        ctx.commandName = interaction.data.name;
+        ctx.options = parseCommandOptions(interaction.data.options);
+        console.log('[DIAGNOSTIC-CONFIG] commandName:', ctx.commandName);
+        
+        if (ctx.commandName === 'suggestion') {
+          const handled = await handleHttpSuggestionCommand(ctx, respond);
+          if (handled) return;
+        }
+
+        if (ctx.commandName === 'config') {
+          const handled = await handleHttpConfigCommand(ctx, respond);
+          if (handled) return;
+        }
+        
+        // Feature adaptation boundary: Route to shared service layer
+        // e.g. return respond(await ticketService.handleCreate(ctx));
+        return respond({ content: `Vercel HTTP: Executing command ${ctx.commandName}`, flags: 64 });
       }
 
-      if (ctx.commandName === 'config') {
-        const handled = await handleHttpConfigCommand(ctx, respond);
-        if (handled) return;
+      if (interaction.type === 3) { // MESSAGE_COMPONENT
+        ctx.customId = interaction.data.custom_id;
+        ctx.componentValues = interaction.data.values;
+        
+        // Attempt Reaction Role route first
+        if (ctx.customId?.startsWith('rr:')) {
+          const handled = await handleHttpReactionRoleInteraction(ctx, respond);
+          if (handled) return;
+        }
+        
+        // Attempt Suggestion route
+        if (ctx.customId?.startsWith('suggestion:')) {
+          const handled = await handleHttpSuggestionInteraction(ctx, respond);
+          if (handled) return;
+        }
+
+        // Attempt Ticket route
+        if (ctx.customId?.startsWith('ticket_')) {
+          const handled = await handleHttpTicketInteraction(ctx, respond);
+          if (handled) return;
+        }
+
+        // Attempt Config route
+        if (ctx.customId?.startsWith('config_')) {
+          const handled = await handleHttpConfigInteraction(ctx, respond);
+          if (handled) return;
+        }
+        
+        return respond({ content: `Vercel HTTP: Handled component ${ctx.customId}`, flags: 64 });
       }
-      
-      // Feature adaptation boundary: Route to shared service layer
-      // e.g. return respond(await ticketService.handleCreate(ctx));
-      return respond({ content: `Vercel HTTP: Executing command ${ctx.commandName}`, flags: 64 });
+
+      if (interaction.type === 5) { // MODAL_SUBMIT
+        ctx.customId = interaction.data.custom_id;
+        ctx.modalFields = parseModalComponents(interaction.data.components);
+        
+        if (ctx.customId?.startsWith('suggestion:')) {
+          const handled = await handleHttpSuggestionInteraction(ctx, respond);
+          if (handled) return;
+        }
+        
+        if (ctx.customId?.startsWith('ticket_')) {
+          const handled = await handleHttpTicketInteraction(ctx, respond);
+          if (handled) return;
+        }
+
+        if (ctx.customId?.startsWith('config_')) {
+          const handled = await handleHttpConfigInteraction(ctx, respond);
+          if (handled) return;
+        }
+        
+        return respond({ content: `Vercel HTTP: Handled modal ${ctx.customId}`, flags: 64 });
+      }
+
+      return respond({ content: 'Unknown interaction type received.', flags: 64 });
+    };
+
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('GLOBAL_TIMEOUT_2500')), 2500)
+    );
+
+    try {
+      await Promise.race([processInteraction(), timeoutPromise]);
+    } catch (e: any) {
+      if (e.message === 'GLOBAL_TIMEOUT_2500') {
+        console.log('[DIAGNOSTIC-CONFIG] Global interaction timeout triggered.');
+        // We use UPDATE_MESSAGE (7) for components, and CHANNEL_MESSAGE (4) for commands
+        const responseType = interaction.type === 3 ? 7 : ResponseTypes.CHANNEL_MESSAGE_WITH_SOURCE;
+        respond({ content: '⏳ Database is connecting/warming up. Please try again in a few seconds.', flags: 64 }, responseType);
+      } else {
+        throw e;
+      }
     }
-
-    if (interaction.type === 3) { // MESSAGE_COMPONENT
-      ctx.customId = interaction.data.custom_id;
-      ctx.componentValues = interaction.data.values;
-      
-      // Attempt Reaction Role route first
-      if (ctx.customId?.startsWith('rr:')) {
-        const handled = await handleHttpReactionRoleInteraction(ctx, respond);
-        if (handled) return;
-      }
-      
-      // Attempt Suggestion route
-      if (ctx.customId?.startsWith('suggestion:')) {
-        const handled = await handleHttpSuggestionInteraction(ctx, respond);
-        if (handled) return;
-      }
-
-      // Attempt Ticket route
-      if (ctx.customId?.startsWith('ticket_')) {
-        const handled = await handleHttpTicketInteraction(ctx, respond);
-        if (handled) return;
-      }
-
-      // Attempt Config route
-      if (ctx.customId?.startsWith('config_')) {
-        const handled = await handleHttpConfigInteraction(ctx, respond);
-        if (handled) return;
-      }
-      
-      return respond({ content: `Vercel HTTP: Handled component ${ctx.customId}`, flags: 64 });
-    }
-
-    if (interaction.type === 5) { // MODAL_SUBMIT
-      ctx.customId = interaction.data.custom_id;
-      ctx.modalFields = parseModalComponents(interaction.data.components);
-      
-      if (ctx.customId?.startsWith('suggestion:')) {
-        const handled = await handleHttpSuggestionInteraction(ctx, respond);
-        if (handled) return;
-      }
-      
-      if (ctx.customId?.startsWith('ticket_')) {
-        const handled = await handleHttpTicketInteraction(ctx, respond);
-        if (handled) return;
-      }
-
-      if (ctx.customId?.startsWith('config_')) {
-        const handled = await handleHttpConfigInteraction(ctx, respond);
-        if (handled) return;
-      }
-      
-      return respond({ content: `Vercel HTTP: Handled modal ${ctx.customId}`, flags: 64 });
-    }
-
-    return respond({ content: 'Unknown interaction type received.', flags: 64 });
   } catch (error) {
     logger.error('Error handling interaction', error);
     if (!res.headersSent) {

@@ -10,8 +10,13 @@ export async function isAdministrator(ctx: HttpInteractionContext): Promise<bool
 }
 
 export async function generateMainDashboardJson(guildId: string, guildName: string, iconUrl?: string) {
+  console.log('[DIAGNOSTIC-CONFIG] generateMainDashboardJson: findUnique');
   let config = await prisma.guildConfig.findUnique({ where: { guildId } });
-  if (!config) config = await prisma.guildConfig.create({ data: { guildId } });
+  if (!config) {
+    console.log('[DIAGNOSTIC-CONFIG] generateMainDashboardJson: create');
+    config = await prisma.guildConfig.create({ data: { guildId } });
+  }
+  console.log('[DIAGNOSTIC-CONFIG] generateMainDashboardJson: success');
 
   const embed: any = {
     title: '⚙️ PATIO BOT CONFIGURATION',
@@ -351,16 +356,29 @@ import { createMessage } from './discordRest';
 
 export async function handleHttpConfigCommand(ctx: HttpInteractionContext, respond: any): Promise<boolean> {
   if (ctx.commandName !== 'config') return false;
+  console.log('[DIAGNOSTIC-CONFIG] handleHttpConfigCommand entered');
   if (!ctx.guildId) {
     respond({ content: '❌ This command can only be used in a server.', flags: 64 });
     return true;
   }
+  console.log('[DIAGNOSTIC-CONFIG] guildId obtained:', ctx.guildId);
   if (!(await isAdministrator(ctx))) {
+    console.log('[DIAGNOSTIC-CONFIG] isAdministrator check failed');
     respond({ content: '❌ You must be an Administrator to use this command.', flags: 64 });
     return true;
   }
-  const payload = await generateMainDashboardJson(ctx.guildId, `Guild ${ctx.guildId}`);
-  respond({ ...payload, flags: 64 });
+  console.log('[DIAGNOSTIC-CONFIG] isAdministrator check passed');
+  
+  try {
+    console.log('[DIAGNOSTIC-CONFIG] fetching Prisma config');
+    const payload = await generateMainDashboardJson(ctx.guildId, `Guild ${ctx.guildId}`);
+    console.log('[DIAGNOSTIC-CONFIG] Prisma config fetched and dashboard generated');
+    respond({ ...payload, flags: 64 });
+    console.log('[DIAGNOSTIC-CONFIG] respond() called successfully');
+  } catch (err: any) {
+    console.error('[DIAGNOSTIC-CONFIG] Prisma or rendering error:', err);
+    respond({ content: '❌ Internal error loading config.', flags: 64 });
+  }
   return true;
 }
 
