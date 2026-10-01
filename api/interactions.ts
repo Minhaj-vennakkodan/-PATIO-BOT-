@@ -25,14 +25,18 @@ export default async function handler(req: any, res: any) {
     return res.status(401).json({ error: 'Missing signature headers' });
   }
 
-  // Read raw body using async iterators which are safe against stream buffering
   let rawBody = '';
   try {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) {
-      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-    }
-    rawBody = Buffer.concat(chunks).toString('utf8');
+    rawBody = await new Promise<string>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      });
+      req.on('end', () => {
+        resolve(Buffer.concat(chunks).toString('utf8'));
+      });
+      req.on('error', reject);
+    });
     console.log('[DIAGNOSTIC] Method:', req.method);
     console.log('[DIAGNOSTIC] x-signature-ed25519 exists:', !!signature);
     console.log('[DIAGNOSTIC] x-signature-timestamp exists:', !!timestamp);
