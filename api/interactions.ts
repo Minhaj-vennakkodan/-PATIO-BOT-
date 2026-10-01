@@ -36,6 +36,12 @@ export default async function handler(req: any, res: any) {
     console.log('[DIAGNOSTIC] x-signature-ed25519 exists:', !!signature);
     console.log('[DIAGNOSTIC] x-signature-timestamp exists:', !!timestamp);
     console.log('[DIAGNOSTIC] Raw body length:', rawBody.length);
+    const pubKey = process.env.DISCORD_PUBLIC_KEY;
+    console.log('[DIAGNOSTIC] DISCORD_PUBLIC_KEY exists:', !!pubKey);
+    if (pubKey) {
+      console.log('[DIAGNOSTIC] DISCORD_PUBLIC_KEY length:', pubKey.length);
+      console.log('[DIAGNOSTIC] DISCORD_PUBLIC_KEY starts with:', pubKey.substring(0, 4) + '...');
+    }
   } catch (err) {
     console.error('[DIAGNOSTIC] Failed to read raw body:', err);
     return res.status(500).json({ error: 'Internal Server Error reading body' });
