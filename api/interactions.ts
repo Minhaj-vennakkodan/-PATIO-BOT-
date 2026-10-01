@@ -6,6 +6,12 @@ import { handleHttpTicketInteraction } from '../src/utils/ticketHttpHandler';
 import { handleHttpConfigCommand, handleHttpConfigInteraction } from '../src/utils/configHttpHandler';
 import { HttpInteractionContext, parseCommandOptions, parseModalComponents, ResponseTypes } from '../src/utils/httpInteractionContext';
 
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
@@ -13,27 +19,51 @@ export default async function handler(req: any, res: any) {
 
   const signature = req.headers['x-signature-ed25519'];
   const timestamp = req.headers['x-signature-timestamp'];
-  const rawBody = JSON.stringify(req.body);
 
   if (!signature || !timestamp) {
     return res.status(401).json({ error: 'Missing signature headers' });
   }
 
-  const isValidRequest = verifyKey(
+  // Read raw body using async iterators which are safe against stream buffering
+  let rawBody = '';
+  try {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    }
+    rawBody = Buffer.concat(chunks).toString('utf8');
+    console.log('[DIAGNOSTIC] Method:', req.method);
+    console.log('[DIAGNOSTIC] x-signature-ed25519 exists:', !!signature);
+    console.log('[DIAGNOSTIC] x-signature-timestamp exists:', !!timestamp);
+    console.log('[DIAGNOSTIC] Raw body length:', rawBody.length);
+  } catch (err) {
+    console.error('[DIAGNOSTIC] Failed to read raw body:', err);
+    return res.status(500).json({ error: 'Internal Server Error reading body' });
+  }
+
+  const isValidRequest = await verifyKey(
     rawBody,
     signature,
     timestamp,
     process.env.DISCORD_PUBLIC_KEY!
   );
+  console.log('[DIAGNOSTIC] verifyKey result:', isValidRequest);
 
   if (!isValidRequest) {
     return res.status(401).json({ error: 'Bad request signature' });
   }
 
-  const interaction = req.body;
+  let interaction;
+  try {
+    interaction = JSON.parse(rawBody);
+  } catch (err) {
+    return res.status(400).json({ error: 'Invalid JSON' });
+  }
 
   try {
+    console.log('[DIAGNOSTIC] Parsed interaction type:', interaction.type);
     if (interaction.type === 1) { // PING
+      console.log('[DIAGNOSTIC] Returning HTTP 200 { type: 1 } for PING');
       return res.status(200).json({ type: ResponseTypes.PONG });
     }
 
