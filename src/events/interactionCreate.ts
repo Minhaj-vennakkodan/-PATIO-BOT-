@@ -168,7 +168,7 @@ async function handleWelcomeInteractions(interaction: Interaction) {
 
 // Extracted handler for ticket interactions
 async function handleTicketInteractions(interaction: Interaction) {
-  if (!interaction.guildId || !interaction.guild) return;
+  if (!interaction.guildId) return;
 
   if (interaction.isChannelSelectMenu()) {
     if (interaction.customId === 'ticket_category_select') {
@@ -322,7 +322,7 @@ async function handleTicketInteractions(interaction: Interaction) {
 
 // Extracted handler for counting interactions
 async function handleCountingInteractions(interaction: Interaction) {
-  if (!interaction.guildId || !interaction.guild) return;
+  if (!interaction.guildId) return;
 
   if (interaction.isChannelSelectMenu() && interaction.customId === 'counting_channel_select') {
     const channelId = interaction.values[0];
@@ -334,7 +334,7 @@ async function handleCountingInteractions(interaction: Interaction) {
 
 // Extracted handler for chatban interactions
 async function handleChatBanInteractions(interaction: Interaction) {
-  if (!interaction.guildId || !interaction.guild) return;
+  if (!interaction.guildId) return;
 
   if (interaction.isRoleSelectMenu() && interaction.customId === 'chatban_role_select') {
     await prisma.guildConfig.update({ where: { guildId: interaction.guildId }, data: { chatBanRoleId: interaction.values[0] } });

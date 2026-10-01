@@ -404,12 +404,12 @@ export async function generateStatusDashboard(guild: Guild) {
 // Interaction Handler
 // ------------------------------------------------------------------
 export async function handleConfigInteractions(interaction: Interaction) {
-  if (!interaction.guildId || !interaction.guild) return false;
+  if (!interaction.guildId) return false;
   if (!interaction.isMessageComponent() && !interaction.isModalSubmit()) return false;
   if (!interaction.customId.startsWith('config_')) return false;
 
-  const member = await interaction.guild.members.fetch(interaction.user.id);
-  if (!isAdministrator(member)) {
+  const memberPerms = interaction.memberPermissions;
+  if (!memberPerms || !memberPerms.has(PermissionFlagsBits.Administrator)) {
     await interaction.reply({ content: '❌ You must be an administrator to use the configuration dashboard.', ephemeral: true });
     return true;
   }
@@ -418,6 +418,20 @@ export async function handleConfigInteractions(interaction: Interaction) {
     const customId = interaction.customId;
     const guildId = interaction.guildId;
 
+    // Acknowledge interaction quickly to avoid timeouts
+    if (interaction.isMessageComponent()) {
+      if (customId === 'config_welcome_test') {
+        await interaction.deferReply({ ephemeral: true });
+      } else if (customId !== 'config_welcome_edit_msg' && 
+                 customId !== 'config_welcome_edit_btn' && 
+                 customId !== 'config_ticket_limits') {
+        await interaction.deferUpdate();
+      }
+    } else if (interaction.isModalSubmit()) {
+      await interaction.deferReply({ ephemeral: true });
+    }
+
+
     // Navigation
     if (customId === 'config_action_close') {
       if (interaction.isMessageComponent()) await interaction.message.delete().catch(() => {});
@@ -425,59 +439,69 @@ export async function handleConfigInteractions(interaction: Interaction) {
     }
     
     if (customId === 'config_back_main' || customId === 'config_action_refresh') {
-      const { embeds, components } = await generateMainDashboard(interaction.guild);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      const guild = interaction.guild ?? await interaction.client.guilds.fetch(guildId).catch(() => null);
+      if (!guild) {
+        if (interaction.isRepliable()) await interaction.followUp({ content: 'Could not fetch server information.', ephemeral: true });
+        return true;
+      }
+      const { embeds, components } = await generateMainDashboard(guild);
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
 
     if (customId === 'config_menu_welcome') {
       const { embeds, components } = await generateWelcomeDashboard(guildId);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
     if (customId === 'config_menu_tickets') {
       const { embeds, components } = await generateTicketDashboard(guildId);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
     if (customId === 'config_menu_counting') {
       const { embeds, components } = await generateCountingDashboard(guildId);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
     if (customId === 'config_menu_chatban') {
       const { embeds, components } = await generateChatBanDashboard(guildId);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
     if (customId === 'config_menu_automod') {
       const { embeds, components } = await generateAutoModDashboard(guildId);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
     if (customId === 'config_menu_reactionroles') {
       const { embeds, components } = await generateReactionRolesDashboard(guildId);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
     if (customId === 'config_menu_giveaways') {
       const { embeds, components } = await generateGiveawaysDashboard(guildId);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
     if (customId === 'config_menu_logging') {
       const { embeds, components } = await generateLoggingDashboard(guildId);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
     if (customId === 'config_menu_permissions') {
       const { embeds, components } = await generatePermissionsDashboard(guildId);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
     if (customId === 'config_menu_status') {
-      const { embeds, components } = await generateStatusDashboard(interaction.guild);
-      if (interaction.isMessageComponent()) await interaction.update({ embeds, components });
+      const guild = interaction.guild ?? await interaction.client.guilds.fetch(guildId).catch(() => null);
+      if (!guild) {
+        if (interaction.isRepliable()) await interaction.followUp({ content: 'Could not fetch server information.', ephemeral: true });
+        return true;
+      }
+      const { embeds, components } = await generateStatusDashboard(guild);
+      if (interaction.isMessageComponent()) await interaction.editReply({ embeds, components });
       return true;
     }
 
@@ -493,7 +517,7 @@ export async function handleConfigInteractions(interaction: Interaction) {
         new ButtonBuilder().setCustomId(`config_confirm_${sysType}_reset`).setLabel('Confirm Reset').setStyle(ButtonStyle.Danger),
         new ButtonBuilder().setCustomId(`config_menu_${sysType}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
       );
-      if (interaction.isMessageComponent()) await interaction.update({ content: `⚠️ Are you sure you want to reset the **${sysType}** configuration?`, embeds: [], components: [confirmRow] });
+      if (interaction.isMessageComponent()) await interaction.editReply({ content: `⚠️ Are you sure you want to reset the **${sysType}** configuration?`, embeds: [], components: [confirmRow] });
       return true;
     }
 
@@ -503,21 +527,21 @@ export async function handleConfigInteractions(interaction: Interaction) {
         await prisma.guildConfig.update({ where: { guildId }, data: { countingCurrent: 1, countingHighest: 0, countingTotalValid: 0, countingStreak: 0, countingLastUserId: null, countingLastCountAt: null } });
         logger.info(`ADMIN CONFIG - User: ${interaction.user.id} reset Counting`);
         const d = await generateCountingDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update({ content: '', ...d });
+        if (interaction.isMessageComponent()) await interaction.editReply({ content: '', ...d });
         return true;
       }
       if (customId.includes('_welcome_')) {
         await prisma.guildConfig.update({ where: { guildId }, data: { welcomeEnabled: false, welcomeChannel: null, welcomeTitle: null, welcomeDescription: null, welcomeMessage: null, welcomeColor: null, welcomeImageUrl: null, welcomeThumbnailUrl: null, welcomeFooterText: null, welcomeShowTimestamp: true, welcomeButtonEnabled: true, welcomeButtonLabel: null, welcomeButtonStyle: null } });
         logger.info(`ADMIN CONFIG - User: ${interaction.user.id} reset Welcome`);
         const d = await generateWelcomeDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update({ content: '', ...d });
+        if (interaction.isMessageComponent()) await interaction.editReply({ content: '', ...d });
         return true;
       }
       if (customId.includes('_ticket_')) {
         await prisma.guildConfig.update({ where: { guildId }, data: { ticketEnabled: false, ticketCategoryId: null, ticketStaffRoleId: null, ticketLogChannelId: null, ticketTranscriptChannelId: null, ticketPanelChannelId: null, ticketPanelMessageId: null, ticketMaxPerUser: 1, ticketCooldownSeconds: 300, ticketNameFormat: 'ticket-{username}' } });
         logger.info(`ADMIN CONFIG - User: ${interaction.user.id} reset Ticket`);
         const d = await generateTicketDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update({ content: '', ...d });
+        if (interaction.isMessageComponent()) await interaction.editReply({ content: '', ...d });
         return true;
       }
     }
@@ -530,28 +554,28 @@ export async function handleConfigInteractions(interaction: Interaction) {
       let updateData = {};
       if (customId === 'config_welcome_toggle') {
         if (!config.welcomeEnabled && !config.welcomeChannel) {
-          if (interaction.isMessageComponent()) await interaction.reply({ content: '❌ Cannot enable Welcome system: No channel configured.', ephemeral: true });
+          if (interaction.isMessageComponent()) await interaction.followUp({ content: '❌ Cannot enable Welcome system: No channel configured.', ephemeral: true });
           return true;
         }
         updateData = { welcomeEnabled: !config.welcomeEnabled };
       }
       if (customId === 'config_ticket_toggle') {
         if (!config.ticketEnabled && !config.ticketCategoryId) {
-          if (interaction.isMessageComponent()) await interaction.reply({ content: '❌ Cannot enable Ticket system: No category configured.', ephemeral: true });
+          if (interaction.isMessageComponent()) await interaction.followUp({ content: '❌ Cannot enable Ticket system: No category configured.', ephemeral: true });
           return true;
         }
         updateData = { ticketEnabled: !config.ticketEnabled };
       }
       if (customId === 'config_counting_toggle') {
         if (!config.countingEnabled && !config.countingChannelId) {
-          if (interaction.isMessageComponent()) await interaction.reply({ content: '❌ Cannot enable Counting system: No channel configured.', ephemeral: true });
+          if (interaction.isMessageComponent()) await interaction.followUp({ content: '❌ Cannot enable Counting system: No channel configured.', ephemeral: true });
           return true;
         }
         updateData = { countingEnabled: !config.countingEnabled };
       }
       if (customId === 'config_chatban_toggle') {
         if (!config.chatBanEnabled && !config.chatBanRoleId) {
-          if (interaction.isMessageComponent()) await interaction.reply({ content: '❌ Cannot enable ChatBan system: No ChatBan role configured.', ephemeral: true });
+          if (interaction.isMessageComponent()) await interaction.followUp({ content: '❌ Cannot enable ChatBan system: No ChatBan role configured.', ephemeral: true });
           return true;
         }
         updateData = { chatBanEnabled: !config.chatBanEnabled };
@@ -588,28 +612,28 @@ export async function handleConfigInteractions(interaction: Interaction) {
       // Refresh respective dashboard
       if (customId.includes('welcome')) {
         const d = await generateWelcomeDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update(d);
+        if (interaction.isMessageComponent()) await interaction.editReply(d);
       } else if (customId.includes('ticket')) {
         const d = await generateTicketDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update(d);
+        if (interaction.isMessageComponent()) await interaction.editReply(d);
       } else if (customId.includes('counting')) {
         const d = await generateCountingDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update(d);
+        if (interaction.isMessageComponent()) await interaction.editReply(d);
       } else if (customId.includes('chatban')) {
         const d = await generateChatBanDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update(d);
+        if (interaction.isMessageComponent()) await interaction.editReply(d);
       } else if (customId.includes('automod')) {
         const d = await generateAutoModDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update(d);
+        if (interaction.isMessageComponent()) await interaction.editReply(d);
       } else if (customId.includes('reactionroles')) {
         const d = await generateReactionRolesDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update(d);
+        if (interaction.isMessageComponent()) await interaction.editReply(d);
       } else if (customId.includes('giveaways')) {
         const d = await generateGiveawaysDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update(d);
+        if (interaction.isMessageComponent()) await interaction.editReply(d);
       } else if (customId.includes('suggestions')) {
         const d = await generateSuggestionsDashboard(guildId);
-        if (interaction.isMessageComponent()) await interaction.update(d);
+        if (interaction.isMessageComponent()) await interaction.editReply(d);
       }
       return true;
     }
@@ -638,7 +662,113 @@ export async function handleConfigInteractions(interaction: Interaction) {
         await prisma.guildConfig.update({ where: { guildId }, data: updateData });
         logger.info(`ADMIN CONFIG - User: ${interaction.user.id} updated ${customId} to ${val}`);
         const d = await refreshFunc(guildId);
-        await interaction.update(d);
+        await interaction.editReply(d);
+        return true;
+      }
+    }
+
+    // Welcome specific actions
+    if (interaction.isButton()) {
+      if (customId === 'config_welcome_edit_msg') {
+        const config = await prisma.guildConfig.findUnique({ where: { guildId } });
+        
+        const modal = new ModalBuilder()
+          .setCustomId('welcome_text_modal')
+          .setTitle('Edit Welcome Message');
+
+        const msgInput = new TextInputBuilder().setCustomId('msg').setLabel('Content (Outside Embed)').setStyle(TextInputStyle.Paragraph).setRequired(false).setValue(config?.welcomeMessage || '');
+        const titleInput = new TextInputBuilder().setCustomId('title').setLabel('Embed Title').setStyle(TextInputStyle.Short).setRequired(false).setValue(config?.welcomeTitle || '');
+        const descInput = new TextInputBuilder().setCustomId('desc').setLabel('Embed Description').setStyle(TextInputStyle.Paragraph).setRequired(false).setValue(config?.welcomeDescription || '');
+        const colorInput = new TextInputBuilder().setCustomId('color').setLabel('Embed Color (Hex)').setStyle(TextInputStyle.Short).setRequired(false).setValue(config?.welcomeColor || '');
+        const imgInput = new TextInputBuilder().setCustomId('img').setLabel('Image URL').setStyle(TextInputStyle.Short).setRequired(false).setValue(config?.welcomeImageUrl || '');
+
+        modal.addComponents(
+          new ActionRowBuilder<TextInputBuilder>().addComponents(msgInput),
+          new ActionRowBuilder<TextInputBuilder>().addComponents(titleInput),
+          new ActionRowBuilder<TextInputBuilder>().addComponents(descInput),
+          new ActionRowBuilder<TextInputBuilder>().addComponents(colorInput),
+          new ActionRowBuilder<TextInputBuilder>().addComponents(imgInput)
+        );
+
+        await interaction.showModal(modal);
+        return true;
+      }
+      
+      if (customId === 'config_welcome_edit_btn') {
+        const config = await prisma.guildConfig.findUnique({ where: { guildId } });
+        
+        const modal = new ModalBuilder()
+          .setCustomId('welcome_btn_modal')
+          .setTitle('Edit Welcome Button');
+
+        const enabledInput = new TextInputBuilder().setCustomId('enabled').setLabel('Enable Button? (true/false)').setStyle(TextInputStyle.Short).setRequired(true).setValue(String(config?.welcomeButtonEnabled ?? true));
+        const labelInput = new TextInputBuilder().setCustomId('label').setLabel('Button Label').setStyle(TextInputStyle.Short).setRequired(false).setValue(config?.welcomeButtonLabel || '');
+        const styleInput = new TextInputBuilder().setCustomId('style').setLabel('Style (1:Primary, 2:Secondary, etc)').setStyle(TextInputStyle.Short).setRequired(false).setValue(String(config?.welcomeButtonStyle || 1));
+
+        modal.addComponents(
+          new ActionRowBuilder<TextInputBuilder>().addComponents(enabledInput),
+          new ActionRowBuilder<TextInputBuilder>().addComponents(labelInput),
+          new ActionRowBuilder<TextInputBuilder>().addComponents(styleInput)
+        );
+
+        await interaction.showModal(modal);
+        return true;
+      }
+
+      if (customId === 'config_welcome_test') {
+        const config = await prisma.guildConfig.findUnique({ where: { guildId } });
+        
+        if (!config || !config.welcomeChannel) {
+          await interaction.editReply({ content: 'Welcome channel is not set up!' });
+          return true;
+        }
+        
+        const memberRecord = await prisma.memberRecord.findUnique({
+          where: { guildId_userId: { guildId: interaction.guildId, userId: interaction.user.id } }
+        });
+        const memberNumber = memberRecord?.memberNumber || 999;
+        
+        const { buildWelcomeMessage } = await import('./welcomeUtils');
+        const guild = interaction.guild ?? await interaction.client.guilds.fetch(guildId).catch(() => null);
+        if (!guild) {
+          await interaction.editReply({ content: 'Could not fetch server information.' });
+          return true;
+        }
+        const messagePayload = buildWelcomeMessage(interaction.member as any, guild, config, memberNumber);
+        
+        await interaction.editReply({ content: '**[PREVIEW]**\n' + (messagePayload.content || ''), embeds: messagePayload.embeds, components: messagePayload.components });
+        return true;
+      }
+      
+      if (customId === 'config_ticket_limits') {
+        const config = await prisma.guildConfig.findUnique({ where: { guildId } });
+        const modal = new ModalBuilder().setCustomId('ticket_limits_modal').setTitle('Ticket Limits');
+        const maxInput = new TextInputBuilder().setCustomId('max').setLabel('Max Tickets Per User').setStyle(TextInputStyle.Short).setValue(String(config?.ticketMaxPerUser || 1));
+        const cdInput = new TextInputBuilder().setCustomId('cooldown').setLabel('Cooldown (Seconds)').setStyle(TextInputStyle.Short).setValue(String(config?.ticketCooldownSeconds || 300));
+        modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(maxInput), new ActionRowBuilder<TextInputBuilder>().addComponents(cdInput));
+        await interaction.showModal(modal);
+        return true;
+      }
+      
+      if (customId === 'config_ticket_send_panel') {
+        const config = await prisma.guildConfig.findUnique({ where: { guildId } });
+        if (!config || !config.ticketPanelChannelId) {
+          await interaction.followUp({ content: '❌ Ticket panel channel is not configured.', ephemeral: true });
+          return true;
+        }
+        const guild = interaction.guild ?? await interaction.client.guilds.fetch(guildId).catch(() => null);
+        if (!guild) {
+          await interaction.followUp({ content: 'Could not fetch server information.', ephemeral: true });
+          return true;
+        }
+        const panelChannel = guild.channels.cache.get(config.ticketPanelChannelId) ?? await guild.channels.fetch(config.ticketPanelChannelId).catch(() => null);
+        if (panelChannel && panelChannel.isTextBased()) {
+          const { createTicketPanel } = await import('./ticketService');
+          await createTicketPanel(panelChannel as any, guildId);
+          await interaction.followUp({ content: '✅ Ticket panel sent to <#' + config.ticketPanelChannelId + '>.', ephemeral: true });
+        } else {
+          await interaction.followUp({ content: '❌ Invalid ticket panel channel.', ephemeral: true });
+        }
         return true;
       }
     }
@@ -647,7 +777,11 @@ export async function handleConfigInteractions(interaction: Interaction) {
   } catch (error) {
     logger.error('Error handling config interaction', error);
     if (interaction.isRepliable()) {
-      await interaction.reply({ content: '❌ An error occurred processing this configuration change.', ephemeral: true }).catch(() => {});
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({ content: '❌ An error occurred processing this configuration change.', ephemeral: true }).catch(() => {});
+      } else {
+        await interaction.reply({ content: '❌ An error occurred processing this configuration change.', ephemeral: true }).catch(() => {});
+      }
     }
     return true;
   }

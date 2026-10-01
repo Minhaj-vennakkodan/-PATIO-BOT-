@@ -3,12 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 model GuildConfig {
-  guildId        String @id
+  guildId String @id @map("_id")
   
   // Advanced Welcome System
   welcomeEnabled     Boolean @default(false)
@@ -93,7 +93,7 @@ model GuildConfig {
 }
 
 model AutoModRule {
-  id              String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   guildId         String
   ruleType        String   // spam, flood, duplicate, mentions, links, emoji, caps, profanity
   enabled         Boolean  @default(false)
@@ -105,7 +105,7 @@ model AutoModRule {
 }
 
 model AutoModWord {
-  id              String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   guildId         String
   word            String
   
@@ -113,7 +113,7 @@ model AutoModWord {
 }
 
 model ModerationWarning {
-  id              String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   guildId         String
   userId          String
   moderatorId     String?
@@ -125,7 +125,7 @@ model ModerationWarning {
 }
 
 model ChatBanRecord {
-  id         String    @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   guildId    String
   userId     String
   reason     String
@@ -141,7 +141,7 @@ model ChatBanRecord {
 }
 
 model RoleBackup {
-  id               String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   chatBanRecordId  String
   roleId           String
   roleNameSnapshot String
@@ -152,7 +152,7 @@ model RoleBackup {
 }
 
 model TicketType {
-  id          String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   guildId     String
   key         String
   name        String
@@ -166,7 +166,7 @@ model TicketType {
 }
 
 model TicketRecord {
-  id           String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   ticketId     String // Usually mapped to channelId or a sequential number
   guildId      String
   channelId    String
@@ -183,7 +183,7 @@ model TicketRecord {
 }
 
 model MemberRecord {
-  id        String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   guildId   String
   userId    String
   joinCount Int      @default(1)
@@ -199,7 +199,7 @@ model MemberRecord {
 }
 
 model ModerationCase {
-  id          String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   caseNumber  Int
   guildId     String
   userId      String
@@ -215,12 +215,11 @@ model ModerationCase {
 
   @@unique([guildId, caseNumber])
   @@index([guildId, userId])
-  @@index([guildId, caseNumber])
   @@index([guildId, createdAt])
 }
 
 model ReactionRolePanel {
-  id          String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   guildId     String
   channelId   String?
   messageId   String?
@@ -237,7 +236,7 @@ model ReactionRolePanel {
 }
 
 model ReactionRole {
-  id          String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   panelId     String
   roleId      String
   label       String
@@ -255,7 +254,7 @@ model ReactionRole {
 }
 
 model Giveaway {
-  id                String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   guildId           String
   channelId         String
   messageId         String?
@@ -280,7 +279,7 @@ model Giveaway {
 }
 
 model GiveawayEntry {
-  id         String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   giveawayId String
   userId     String
   enteredAt  DateTime @default(now())
@@ -291,7 +290,7 @@ model GiveawayEntry {
 }
 
 model GiveawayWinner {
-  id           String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   giveawayId   String
   userId       String
   selectedAt   DateTime @default(now())
@@ -303,7 +302,7 @@ model GiveawayWinner {
 }
 
 model Suggestion {
-  id               String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   guildId          String
   suggestionNumber Int
   authorId         String
@@ -329,7 +328,7 @@ model Suggestion {
 }
 
 model SuggestionVote {
-  id           String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   suggestionId String
   userId       String
   vote         String   // UP, DOWN
@@ -340,7 +339,7 @@ model SuggestionVote {
 }
 
 model SuggestionCooldown {
-  id        String   @id @default(uuid())
+  id String @id @map("_id") @default(uuid())
   guildId   String
   userId    String
   lastSubmitAt DateTime @default(now())

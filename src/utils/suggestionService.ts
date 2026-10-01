@@ -1,6 +1,6 @@
 import { prisma } from '../database/client';
 import { logger } from './logger';
-import { Client, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, TextChannel } from 'discord.js';
+import { editMessage, getGuildMember } from './discordRest';
 
 export async function createSuggestion(guildId: string, authorId: string, content: string, anonymous: boolean) {
   // Use Prisma atomic update to get the next suggestion number safely
@@ -104,20 +104,11 @@ export async function moderateSuggestion(
   return result.count > 0;
 }
 
-export async function refreshSuggestionMessage(client: Client, guildId: string, suggestionId: string) {
+export async function refreshSuggestionMessage(client: any, guildId: string, suggestionId: string) {
   const suggestion = await getSuggestion(guildId, suggestionId);
   if (!suggestion || !suggestion.messageId || !suggestion.channelId) return;
 
-  const config = await prisma.guildConfig.findUnique({ where: { guildId } });
-  
   try {
-    const guild = await client.guilds.fetch(guildId).catch(() => null);
-    if (!guild) return;
-    const channel = await guild.channels.fetch(suggestion.channelId).catch(() => null) as TextChannel;
-    if (!channel) return;
-    const message = await channel.messages.fetch(suggestion.messageId).catch(() => null);
-    if (!message) return;
-
     let upvotes = 0;
     let downvotes = 0;
     for (const v of suggestion.votes) {
@@ -125,63 +116,78 @@ export async function refreshSuggestionMessage(client: Client, guildId: string, 
       if (v.vote === 'DOWN') downvotes++;
     }
 
-    const embed = new EmbedBuilder()
-      .setTitle(`Suggestion #${suggestion.suggestionNumber}`)
-      .setDescription(suggestion.content)
-      .setTimestamp(suggestion.createdAt);
+    const embed: any = {
+      title: `Suggestion #${suggestion.suggestionNumber}`,
+      description: suggestion.content,
+      timestamp: suggestion.createdAt.toISOString(),
+      fields: []
+    };
 
     if (suggestion.anonymous) {
-      embed.setAuthor({ name: 'Anonymous' });
+      embed.author = { name: 'Anonymous' };
     } else {
-      const authorMember = await guild.members.fetch(suggestion.authorId).catch(() => null);
-      if (authorMember) {
-        embed.setAuthor({ name: authorMember.user.tag, iconURL: authorMember.user.displayAvatarURL() });
-      } else {
-        embed.setAuthor({ name: `User ID: ${suggestion.authorId}` });
+      try {
+        const authorMember = await getGuildMember(guildId, suggestion.authorId);
+        embed.author = { 
+          name: authorMember.user.username, // Simplified for REST
+          icon_url: `https://cdn.discordapp.com/avatars/${authorMember.user.id}/${authorMember.user.avatar}.png`
+        };
+      } catch {
+        embed.author = { name: `User ID: ${suggestion.authorId}` };
       }
     }
 
     switch (suggestion.status) {
-      case 'PENDING': embed.setColor('#f1c40f'); break;
-      case 'APPROVED': embed.setColor('#2ecc71'); break;
-      case 'DENIED': embed.setColor('#e74c3c'); break;
-      case 'IMPLEMENTED': embed.setColor('#3498db'); break;
-      case 'ARCHIVED': embed.setColor('#95a5a6'); break;
+      case 'PENDING': embed.color = 0xf1c40f; break;
+      case 'APPROVED': embed.color = 0x2ecc71; break;
+      case 'DENIED': embed.color = 0xe74c3c; break;
+      case 'IMPLEMENTED': embed.color = 0x3498db; break;
+      case 'ARCHIVED': embed.color = 0x95a5a6; break;
     }
 
-    embed.addFields({ name: 'Status', value: suggestion.status, inline: true });
-    embed.addFields({ name: 'Votes', value: `👍 ${upvotes} | 👎 ${downvotes}`, inline: true });
+    embed.fields.push({ name: 'Status', value: suggestion.status, inline: true });
+    embed.fields.push({ name: 'Votes', value: `👍 ${upvotes} | 👎 ${downvotes}`, inline: true });
 
     if (suggestion.staffReason) {
-      embed.addFields({ name: 'Staff Reason', value: suggestion.staffReason, inline: false });
+      embed.fields.push({ name: 'Staff Reason', value: suggestion.staffReason, inline: false });
     }
 
-    const row = new ActionRowBuilder<ButtonBuilder>();
-    
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`suggestion:upvote:${suggestion.id}`)
-        .setLabel(`Upvote (${upvotes})`)
-        .setEmoji('👍')
-        .setStyle(ButtonStyle.Success)
-        .setDisabled(suggestion.status !== 'PENDING'),
-      new ButtonBuilder()
-        .setCustomId(`suggestion:downvote:${suggestion.id}`)
-        .setLabel(`Downvote (${downvotes})`)
-        .setEmoji('👎')
-        .setStyle(ButtonStyle.Danger)
-        .setDisabled(suggestion.status !== 'PENDING')
-    );
+    const row1 = {
+      type: 1,
+      components: [
+        {
+          type: 2,
+          custom_id: `suggestion:upvote:${suggestion.id}`,
+          label: `Upvote (${upvotes})`,
+          emoji: { name: '👍' },
+          style: 3,
+          disabled: suggestion.status !== 'PENDING'
+        },
+        {
+          type: 2,
+          custom_id: `suggestion:downvote:${suggestion.id}`,
+          label: `Downvote (${downvotes})`,
+          emoji: { name: '👎' },
+          style: 4,
+          disabled: suggestion.status !== 'PENDING'
+        }
+      ]
+    };
 
-    const staffRow = new ActionRowBuilder<ButtonBuilder>();
-    staffRow.addComponents(
-      new ButtonBuilder().setCustomId(`suggestion:approve:${suggestion.id}`).setLabel('Approve').setStyle(ButtonStyle.Success).setDisabled(suggestion.status !== 'PENDING'),
-      new ButtonBuilder().setCustomId(`suggestion:deny:${suggestion.id}`).setLabel('Deny').setStyle(ButtonStyle.Danger).setDisabled(suggestion.status !== 'PENDING'),
-      new ButtonBuilder().setCustomId(`suggestion:implement:${suggestion.id}`).setLabel('Implement').setStyle(ButtonStyle.Primary).setDisabled(suggestion.status !== 'APPROVED'),
-      new ButtonBuilder().setCustomId(`suggestion:archive:${suggestion.id}`).setLabel('Archive').setStyle(ButtonStyle.Secondary).setDisabled(suggestion.status === 'ARCHIVED')
-    );
+    const staffRow = {
+      type: 1,
+      components: [
+        { type: 2, custom_id: `suggestion:approve:${suggestion.id}`, label: 'Approve', style: 3, disabled: suggestion.status !== 'PENDING' },
+        { type: 2, custom_id: `suggestion:deny:${suggestion.id}`, label: 'Deny', style: 4, disabled: suggestion.status !== 'PENDING' },
+        { type: 2, custom_id: `suggestion:implement:${suggestion.id}`, label: 'Implement', style: 1, disabled: suggestion.status !== 'APPROVED' },
+        { type: 2, custom_id: `suggestion:archive:${suggestion.id}`, label: 'Archive', style: 2, disabled: suggestion.status === 'ARCHIVED' }
+      ]
+    };
 
-    await message.edit({ embeds: [embed], components: [row, staffRow] });
+    await editMessage(suggestion.channelId, suggestion.messageId, {
+      embeds: [embed],
+      components: [row1, staffRow]
+    });
   } catch (error) {
     logger.error(`Failed to refresh suggestion message ${suggestionId}:`, error);
   }
